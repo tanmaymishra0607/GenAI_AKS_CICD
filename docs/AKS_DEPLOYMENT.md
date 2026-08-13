@@ -1,8 +1,23 @@
 # AKS CI/CD setup
 
 The workflow at `.github/workflows/deploy-aks.yml` builds the Docker image, pushes it
-to Azure Container Registry (ACR), and deploys it to AKS on every push to `main`.
-It authenticates via OIDC federated credentials — no long-lived secrets stored in GitHub.
+to Azure Container Registry (ACR), and deploys it to AKS on every push to `master`
+(this repo's default branch). It authenticates via OIDC federated credentials — no
+long-lived secrets stored in GitHub.
+
+This has already been provisioned for this repo:
+
+- Resource group `rg-genai-aks-cicd` (East US)
+- ACR `genaiakscicdacr`
+- AKS cluster `aks-genai-cicd` (1x Standard_D2s_v3 node)
+- Azure AD app `gh-genai-aks-cicd` with an OIDC federated credential for
+  `repo:tanmaymishra0607/GenAI_AKS_CICD:ref:refs/heads/master`, granted `AcrPush` on the
+  ACR and `Azure Kubernetes Service Cluster User Role` on the resource group
+- GitHub secrets `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID` and
+  variables `ACR_NAME`, `AKS_CLUSTER_NAME`, `AKS_RESOURCE_GROUP` are set on the repo
+
+The steps below are for reference (e.g. rotating credentials or setting this up in a
+new environment) — you don't need to re-run them.
 
 ## 1. Create an Azure AD app registration + federated credential
 
@@ -19,15 +34,15 @@ AKS_CLUSTER_NAME="<your-aks-cluster-name>"
 APP_ID=$(az ad app create --display-name "$APP_NAME" --query appId -o tsv)
 az ad sp create --id "$APP_ID"
 
-# Federated credential scoped to pushes on main
+# Federated credential scoped to pushes on the default branch (this repo's default is `master`)
 az ad app federated-credential create --id "$APP_ID" --parameters '{
   "name": "github-main",
   "issuer": "https://token.actions.githubusercontent.com",
-  "subject": "repo:'"$GH_ORG"'/'"$GH_REPO"':ref:refs/heads/main",
+  "subject": "repo:'"$GH_ORG"'/'"$GH_REPO"':ref:refs/heads/master",
   "audiences": ["api://AzureADTokenExchange"]
 }'
 
-# Optional: also allow manual workflow_dispatch runs from main (same subject, so nothing extra needed)
+# Optional: also allow manual workflow_dispatch runs from that branch (same subject, so nothing extra needed)
 ```
 
 ## 2. Grant the app the permissions it needs
