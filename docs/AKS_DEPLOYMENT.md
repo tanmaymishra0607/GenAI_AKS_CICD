@@ -11,8 +11,12 @@ This has already been provisioned for this repo:
 - ACR `genaiakscicdacr`
 - AKS cluster `aks-genai-cicd` (1x Standard_D2s_v3 node)
 - Azure AD app `gh-genai-aks-cicd` with an OIDC federated credential for
-  `repo:tanmaymishra0607/GenAI_AKS_CICD:ref:refs/heads/master`, granted `AcrPush` on the
-  ACR and `Azure Kubernetes Service Cluster User Role` on the resource group
+  `repo:tanmaymishra0607@102911999/GenAI_AKS_CICD@1333280890:ref:refs/heads/master`,
+  granted `AcrPush` + `Reader` on the ACR and `Azure Kubernetes Service Cluster User Role`
+  on the resource group. Note: GitHub's OIDC subject claim includes the stable numeric
+  owner/repo IDs (`owner@ownerID/repo@repoID`), not just the names — check the actual
+  claim in a failed run's "Azure login" log if a login ever fails with
+  `AADSTS700213: No matching federated identity record found`.
 - GitHub secrets `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID` and
   variables `ACR_NAME`, `AKS_CLUSTER_NAME`, `AKS_RESOURCE_GROUP` are set on the repo
 
@@ -35,6 +39,10 @@ APP_ID=$(az ad app create --display-name "$APP_NAME" --query appId -o tsv)
 az ad sp create --id "$APP_ID"
 
 # Federated credential scoped to pushes on the default branch (this repo's default is `master`)
+# NOTE: GitHub's OIDC subject includes stable numeric owner/repo IDs, e.g.
+#   repo:OWNER@OWNER_ID/REPO@REPO_ID:ref:refs/heads/master
+# not just repo:OWNER/REPO:ref:.... Get the exact string from a failed run's
+# "Azure login" step log (it prints "subject claim - ...") and use that verbatim.
 az ad app federated-credential create --id "$APP_ID" --parameters '{
   "name": "github-main",
   "issuer": "https://token.actions.githubusercontent.com",
@@ -52,8 +60,12 @@ SUBSCRIPTION_ID=$(az account show --query id -o tsv)
 ACR_ID=$(az acr show -n "$ACR_NAME" -g "$RESOURCE_GROUP" --query id -o tsv)
 AKS_ID=$(az aks show -n "$AKS_CLUSTER_NAME" -g "$RESOURCE_GROUP" --query id -o tsv)
 
-# Push images to ACR
+# Push images to ACR (data-plane push/pull)
 az role assignment create --assignee "$APP_ID" --role AcrPush --scope "$ACR_ID"
+
+# `az acr build` also resolves the registry via ARM, which AcrPush alone doesn't cover —
+# without this it fails with "could not be found in subscription" even though it exists
+az role assignment create --assignee "$APP_ID" --role Reader --scope "$ACR_ID"
 
 # Fetch AKS credentials
 az role assignment create --assignee "$APP_ID" --role "Azure Kubernetes Service Cluster User Role" --scope "$AKS_ID"
