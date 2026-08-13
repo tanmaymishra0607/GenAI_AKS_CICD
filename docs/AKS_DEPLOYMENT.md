@@ -12,11 +12,11 @@ This has already been provisioned for this repo:
 - AKS cluster `aks-genai-cicd` (1x Standard_D2s_v3 node)
 - Azure AD app `gh-genai-aks-cicd` with an OIDC federated credential for
   `repo:tanmaymishra0607@102911999/GenAI_AKS_CICD@1333280890:ref:refs/heads/master`,
-  granted `AcrPush` + `Reader` on the ACR and `Azure Kubernetes Service Cluster User Role`
-  on the resource group. Note: GitHub's OIDC subject claim includes the stable numeric
-  owner/repo IDs (`owner@ownerID/repo@repoID`), not just the names — check the actual
-  claim in a failed run's "Azure login" log if a login ever fails with
-  `AADSTS700213: No matching federated identity record found`.
+  granted `Contributor` on the ACR (needed by `az acr build`, not just AcrPush) and
+  `Azure Kubernetes Service Cluster User Role` on the resource group. Note: GitHub's
+  OIDC subject claim includes the stable numeric owner/repo IDs (`owner@ownerID/repo@repoID`),
+  not just the names — check the actual claim in a failed run's "Azure login" log if a
+  login ever fails with `AADSTS700213: No matching federated identity record found`.
 - GitHub secrets `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID` and
   variables `ACR_NAME`, `AKS_CLUSTER_NAME`, `AKS_RESOURCE_GROUP` are set on the repo
 
@@ -60,12 +60,11 @@ SUBSCRIPTION_ID=$(az account show --query id -o tsv)
 ACR_ID=$(az acr show -n "$ACR_NAME" -g "$RESOURCE_GROUP" --query id -o tsv)
 AKS_ID=$(az aks show -n "$AKS_CLUSTER_NAME" -g "$RESOURCE_GROUP" --query id -o tsv)
 
-# Push images to ACR (data-plane push/pull)
-az role assignment create --assignee "$APP_ID" --role AcrPush --scope "$ACR_ID"
-
-# `az acr build` also resolves the registry via ARM, which AcrPush alone doesn't cover —
-# without this it fails with "could not be found in subscription" even though it exists
-az role assignment create --assignee "$APP_ID" --role Reader --scope "$ACR_ID"
+# `az acr build` needs control-plane access to the registry (resolve it via ARM, and
+# request a SAS upload URL for the build context via listBuildSourceUploadUrl) on top
+# of data-plane push/pull, so AcrPush/Reader alone isn't enough — Contributor scoped to
+# just this one ACR resource covers it without granting anything at the subscription level.
+az role assignment create --assignee "$APP_ID" --role Contributor --scope "$ACR_ID"
 
 # Fetch AKS credentials
 az role assignment create --assignee "$APP_ID" --role "Azure Kubernetes Service Cluster User Role" --scope "$AKS_ID"
