@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: genai-aks-cicd
+  namespace: default
+  labels:
+    app: genai-aks-cicd
+spec:
+  type: LoadBalancer
+  selector:
+    app: genai-aks-cicd
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
